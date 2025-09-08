@@ -31,11 +31,16 @@ The script generates a complete Moody diagram as an SVG file with **1400×1000 p
 **Quick Download**: If you just need a high-quality SVG (under 40KB), you can download it directly from the `output/` directory without running the script.
 
 
+![Moody diagram 1400×1000](output/moody_diagram_1400x1000.png)
+
+<small>Click to view full-size: [PNG](output/moody_diagram_1400x1000.png) · [SVG](output/moody_diagram_1400x1000.svg)</small>
+
+
 ## Quick Start
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/yourusername/moody-diagram-generator.git
+   git clone https://github.com/TaviTav/moody-diagram-generator.git
    cd moody-diagram-generator
    ```
 
@@ -50,7 +55,7 @@ The script generates a complete Moody diagram as an SVG file with **1400×1000 p
    ```
 
 4. **Find your diagram**:
-   The SVG file will be saved to `output/moody_diagram.svg`
+   The SVG file will be saved to `output/moody_diagram_WidthxHeight.svg`
 
 ## Use Cases
 
@@ -133,7 +138,7 @@ London, England: 133-156.
 If you use this tool in academic or professional work, please consider citing:
 
 ```
-Moody Diagram Generator. (2025). GitHub repository.
+Moody Diagram Generator (2025)
 https://github.com/TaviTav/moody-diagram-generator
 ```
 
