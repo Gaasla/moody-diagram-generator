@@ -1,0 +1,72 @@
+[project]
+name = "moody-diagram-generator"
+version = "0.1.0"
+description = "A Python script that generates high-quality, scalable Moody diagrams in SVG format for fluid mechanics engineering."
+authors = [
+    { name = "TaviTav" }
+]
+maintainers = [
+    { name = "TaviTav" }
+]
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.20.0",
+]
+keywords = [
+    "moody-diagram",
+    "fluid-mechanics",
+    "engineering",
+    "svg",
+    "hydraulics",
+    "reynolds-number",
+    "friction-factor",
+    "colebrook"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Education",
+    "Topic :: Multimedia :: Graphics"
+]
+
+[project.urls]
+Homepage = "https://github.com/TaviTav/moody-diagram-generator"
+Repository = "https://github.com/TaviTav/moody-diagram-generator"
+Issues = "https://github.com/TaviTav/moody-diagram-generator/issues"
+Documentation = "https://github.com/TaviTav/moody-diagram-generator#readme"
+
+[project.scripts]
+moody-diagram = "main:main"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12.12",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "main.py",
+    "config.py",
+    "README.md",
+    "LICENSE"
+]

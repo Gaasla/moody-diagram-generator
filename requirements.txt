@@ -1,0 +1,9 @@
+# Moody Diagram Generator - Requirements
+# Python dependencies for generating SVG Moody diagrams
+
+# Core dependencies
+numpy>=1.20.0
+
+# Development dependencies (optional)
+# Uncomment the line below if you need the linter for development
+# ruff>=0.12.12

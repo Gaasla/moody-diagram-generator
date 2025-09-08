@@ -1,0 +1,957 @@
+"""Moody Diagram Generator.
+
+A Python tool for generating precise SVG Moody diagrams (friction factor charts)
+for pipe flow analysis in fluid mechanics and hydraulic engineering.
+
+Author: TaviTav
+GitHub: https://github.com/TaviTav/moody-diagram-generator
+License: MIT License
+
+Copyright (c) 2025 TaviTav
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Citation:
+If you use this software in your research or educational materials, please cite:
+TaviTav. (2025). Moody Diagram Generator [Computer software].
+GitHub. https://github.com/TaviTav/moody-diagram-generator
+
+Technical References:
+https://en.wikipedia.org/wiki/Moody_chart
+
+Moody, L. F. (1944), "Friction factors for pipe flow" (PDF), Transactions of the ASME,
+66 (8): 671-684, archived (PDF) from the original on 2019-11-26
+
+Rouse, H. (1943). Evaluation of Boundary Roughness.
+Proceedings Second Hydraulic Conference, University of Iowa Bulletin 27.
+
+Pigott, R. J. S. (1933). "The Flow of Fluids in Closed Conduits".
+Mechanical Engineering. 55: 497-501, 515.
+
+Kemler, E. (1933). "A Study of the Data on the Flow of Fluid in Pipes".
+Transactions of the ASME. 55 (Hyd-55-2): 7-32.
+
+Nikuradse, J. (1933). "Strömungsgesetze in Rauen Rohren".
+V. D. I. Forschungsheft. 361. Berlin: 1-22. These show in detail the transition
+region for pipes with high relative roughness (ε / D > 0.001).
+
+Colebrook, C. F. (1938-1939). "Turbulent Flow in Pipes, With Particular
+Reference to the Transition Region Between the Smooth and Rough Pipe Laws".
+Journal of the Institution of Civil Engineers. 11 (4).
+London, England: 133-156.
+"""
+
+import logging
+import math
+from math import floor, log10
+from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+import numpy as np
+
+if TYPE_CHECKING:
+    from numpy.typing import NDArray
+    NDArrayFloat = NDArray[np.float64]
+
+from config import SVG_CONFIG
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------
+# Utils
+# ---------------------------------------------------------------------
+
+def xpix(re: float) -> float:
+    """Map Reynolds number.
+
+    log10 scale to X pixel coordinates in the plot.
+    """
+    cfg = SVG_CONFIG
+    plot_x = cfg["left"]
+    plot_width = cfg["width"] - cfg["left"] - cfg["right"]
+    re_min = cfg["RE_MIN"] # 600 - minimum Reynolds number
+    re_max = cfg["RE_MAX"] # 100,000,000 - maximum Reynolds number
+    xmin, xmax = log10(re_min), log10(re_max)
+    return plot_x + (log10(re) - xmin) / (xmax - xmin) * plot_width
+
+def ypix(f: float) -> float:
+    """Map friction factor.
+
+    (log10) to Y pixel coordinates in the plot.
+    """
+    cfg = SVG_CONFIG
+    start_y_top = cfg["top"]
+    plot_height = cfg["height"] - cfg["top"] - cfg["bottom"]
+
+    friction_factor_min = cfg["FRICTION_FACTOR_MIN"] # 0.008
+    friction_factor_max = cfg["FRICTION_FACTOR_MAX"] # 0.1
+    return (
+        start_y_top
+        + (log10(friction_factor_max) - log10(f))
+        / (log10(friction_factor_max) - log10(friction_factor_min))
+        * plot_height
+    )
+
+
+# ---------------------------------------------------------------------
+# Header / Footer / Defs
+# ---------------------------------------------------------------------
+
+def svg_header() -> str:
+    """Generate SVG header with responsive theme support.
+
+    Returns:
+    SVG opening tag
+
+    """
+    cfg = SVG_CONFIG
+    width, height = cfg["width"], cfg["height"]
+
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'xmlns:xlink="http://www.w3.org/1999/xlink" '
+        f'width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}">\n'
+    )
+
+def svg_footer() -> str:
+    """Generate SVG closing tag.
+
+    Returns:
+        SVG closing tag with optional metadata comments
+
+    """
+    return "<!-- Generated by Moody Diagram Generator; ductulator.org -->\n</svg>"
+
+def svg_defs() -> str:
+    """Generate SVG definitions with auto-scaled markers and clip paths.
+
+    Returns:
+        SVG defs section with markers and clip paths
+
+    """
+    layout = SVG_CONFIG
+    plot_x = layout["left"]
+    plot_y = layout["top"]
+    plot_width = layout["width"] - layout["left"] - layout["right"]
+    plot_height = layout["height"] - layout["top"] - layout["bottom"]
+
+    # Auto-scaled marker dimensions
+    arrow_size = layout["arrow_viewbox_size"]
+    arrow_ref_x = layout["arrow_ref_x"]
+    arrow_ref_y = layout["arrow_ref_y"]
+    marker_width = layout["arrow_marker_width"]
+    marker_height = layout["arrow_marker_height"]
+
+    return f"""<defs>
+    <!-- Auto-scaled arrow marker -->
+    <marker id="arrow"
+            viewBox="0 0 {arrow_size} {arrow_size}"
+            refX="{arrow_ref_x}" refY="{arrow_ref_y}"
+            markerWidth="{marker_width}" markerHeight="{marker_height}"
+            orient="auto-start-reverse">
+        <path d="M 0 0 L {arrow_size} {arrow_ref_y} L 0 {arrow_size} z"
+              fill="var(--text-primary, currentColor)"
+              stroke="none"/>
+    </marker>
+
+    <!-- Clip path for curve drawing area -->
+    <clipPath id="clipCurves">
+        <rect x="{plot_x}" y="{plot_y}"
+              width="{plot_width}" height="{plot_height}"/>
+    </clipPath>
+</defs>\n"""
+
+
+# ---------------------------------------------------------------------
+# Generate svg content
+# ---------------------------------------------------------------------
+
+def draw_frame() -> str:
+    """Draw the main plot frame.
+
+    Returns:
+        SVG rounded lines for the plot frame with auto-scaled styling
+
+    """
+    cfg = SVG_CONFIG
+
+    # inner frame
+    start_x_left = cfg["left"]
+    start_y_top = cfg["top"]
+    end_x_right = cfg["width"] - cfg["right"]
+    end_y_bottom = cfg["height"] - cfg["bottom"]
+
+    # outer frame
+    start_x_left_outer = 1
+    start_y_top_outer = 1
+    end_x_right_outer = cfg["width"] - 1
+    end_y_bottom_outer = cfg["height"] - 1
+    stroke_width = cfg["frame"]
+    out: list[str] = []
+    out.append(
+        f'<g ID="plotFrame" stroke="currentColor" '
+        f'stroke-width="{stroke_width}" stroke-linecap="round">\n'
+        # Order of lines:Inner then outer Top / Bottom / Left / Right
+        f'    <line x1="{start_x_left:.2f}" y1="{start_y_top:.2f}" '
+        f'x2="{end_x_right:.2f}" y2="{start_y_top:.2f}"/>\n'
+        f'    <line x1="{start_x_left:.2f}" y1="{end_y_bottom:.2f}" '
+        f'x2="{end_x_right:.2f}" y2="{end_y_bottom:.2f}"/>\n'
+        f'    <line x1="{start_x_left:.2f}" y1="{start_y_top:.2f}" '
+        f'x2="{start_x_left:.2f}" y2="{end_y_bottom:.2f}"/>\n'
+        f'    <line x1="{end_x_right:.2f}" y1="{start_y_top:.2f}" '
+        f'x2="{end_x_right:.2f}" y2="{end_y_bottom:.2f}"/>\n'
+        f'    <line x1="{start_x_left_outer:.2f}" y1="{start_y_top_outer:.2f}" '
+        f'x2="{end_x_right_outer:.2f}" y2="{start_y_top_outer:.2f}"/>\n'
+        f'    <line x1="{start_x_left_outer:.2f}" y1="{end_y_bottom_outer:.2f}" '
+        f'x2="{end_x_right_outer:.2f}" y2="{end_y_bottom_outer:.2f}"/>\n'
+        f'    <line x1="{start_x_left_outer:.2f}" y1="{start_y_top_outer:.2f}" '
+        f'x2="{start_x_left_outer:.2f}" y2="{end_y_bottom_outer:.2f}"/>\n'
+        f'    <line x1="{end_x_right_outer:.2f}" y1="{start_y_top_outer:.2f}" '
+        f'x2="{end_x_right_outer:.2f}" y2="{end_y_bottom_outer:.2f}"/>\n'
+        f"</g>\n",
+    )
+    return "\n".join(out)
+
+def _label_reynolds(expo: int) -> str:
+    """Generate superscript notation for powers of 10 (e.g., 10²).
+
+    Helper for draw_reynolds_grid().
+    """
+    sup = {
+        "-": "\u207b", # ⁻
+        "0": "\u2070", # ⁰
+        "1": "\u00b9", # ¹
+        "2": "\u00b2", # ²
+        "3": "\u00b3", # ³
+        "4": "\u2074", # ⁴
+        "5": "\u2075", # ⁵
+        "6": "\u2076", # ⁶
+        "7": "\u2077", # ⁷
+        "8": "\u2078", # ⁸
+        "9": "\u2079", # ⁹
+    }
+    return "10" + "".join(sup.get(ch, ch) for ch in str(expo))
+
+# ruff: noqa: PLR0915
+def draw_reynolds_elements() -> str:
+    """Draw elements for Reynolds numbers.
+
+    Elements include:
+    - Vertical grid lines at each decade (10^n)
+    - Labels for each grid line (2-8 in each decade)
+    - Major grid lines at powers of 10 (10², 10³, etc.)
+    - Title for the Reynolds number axis
+    - Critical zone highlighting (Re = 2000 to Re = 4000)
+    - Complete turbulence boundary
+    - Additional annotations for key regions
+
+    Returns:
+        SVG string containing reynolds related elements
+
+    """
+    cfg = SVG_CONFIG
+
+    plot_x = cfg["left"]
+    plot_y = cfg["top"]
+    plot_height = cfg["height"] - cfg["top"] - cfg["bottom"]
+    plot_width = cfg["width"] - cfg["left"] - cfg["right"]
+    bottom_title_x = cfg["width"] - cfg["right"]
+
+    # lines
+    grid_major_stroke = cfg["grid_major"]
+    grid_minor_stroke = cfg["grid_minor"]
+    grid_major_opacity = cfg["opacity_grid_major"]
+    grid_minor_opacity = cfg["opacity_grid_minor"]
+    marker_height = cfg["arrow_marker_height"]
+
+    # text
+    reynolds_major_grid_label = cfg["axis_label"]
+    reynolds_minor_grid_label = cfg["axis_tick"]
+    font_size_title = cfg["title"]
+    font_family = cfg["font_family"]
+
+    re_min = cfg["RE_MIN"]  # 600 - minimum Reynolds number
+    re_max = cfg["RE_MAX"]  # 100,000,000 - maximum Reynolds number
+    friction_factor_min = cfg["FRICTION_FACTOR_MIN"]  # 0.008
+    friction_factor_max = cfg["FRICTION_FACTOR_MAX"]  # 0.1
+    critical_zone_start = cfg["CRITICAL_ZONE_START"]
+    critical_zone_end = cfg["CRITICAL_ZONE_END"]
+    relative_roughness_min = cfg["RELATIVE_ROUGHNESS_MIN"]  # 0.00001
+    relative_roughness_max = cfg["RELATIVE_ROUGHNESS_MAX"]  # 0.1
+
+    offset: int = 0
+    decade: int = 9
+    out: list[str] = []
+    out.append("<!-- Reynolds related elements -->")
+
+    # Reynolds grid (vertical lines) and labels
+    emin = floor(log10(re_min))
+    emax = floor(log10(re_max))
+    out.append(
+        f'<g ID="gridReynolds" stroke="currentColor" stroke-linecap="round" '
+        f'text-anchor="middle" fill="currentColor" '
+        f'font-family="{font_family}" font-weight="100">',
+    )
+    for n in range(emin, emax + 1):
+        for k in range(1, 10):  # 1-9 in each decade
+            val = k * (10**n)
+
+            # Skip values outside our range
+            if val < re_min - 1e-12 or val > re_max + 1e-12:
+                continue
+
+            x = xpix(val)
+            is_decade = k == 1  # Major tick at powers of 10
+
+            # Draw grid line
+            line_stroke = grid_major_stroke if is_decade else grid_minor_stroke
+            line_opacity = grid_major_opacity if is_decade else grid_minor_opacity
+            offset = marker_height if is_decade else 0
+            out.append(
+                f'    <line stroke_width="{line_stroke}" '
+                f'stroke-opacity="{line_opacity}" '
+                f'x1="{x:.2f}" y1="{plot_y - offset / 2}" '
+                f'x2="{x:.2f}" y2="{plot_y + plot_height + offset}"/>',
+            )
+
+            # Add label (skip k=9 to avoid overlap with next decade)
+            if k != decade:
+                if is_decade:
+                    # Power of 10 notation: 10², 10³, etc.
+                    expo = round(log10(val))
+                    label = _label_reynolds(expo)
+                    text_height = reynolds_major_grid_label
+                    offset = marker_height * 3
+                else:
+                    # Simple digit: 2, 3, 4, 5, 6, 7, 8
+                    label = str(k)
+                    text_height = reynolds_minor_grid_label
+                    offset = marker_height * 2
+
+                label_y = plot_y + plot_height + offset
+                out.append(
+                    f'    <text font-size="{text_height}" '
+                    f'x="{x:.2f}" y="{label_y}">{label}</text>',
+                )
+
+    # Bottom text / title
+    out.append("</g>\n")
+
+    out.append(
+        f'<g ID="bottomTitle" font-size="{font_size_title}" '
+        f'font-family="{font_family}" font-weight="400" fill="currentColor">',
+    )
+    out.append(
+        f'    <text text-anchor="start" '
+        f'x="{plot_x:.2f}" y="{plot_y + plot_height + offset * 2:.2f}">'
+        f'Moody Diagram</text>',
+    )
+    out.append(
+        f'    <text text-anchor="end" '
+        f'x="{bottom_title_x:.2f}" y="{plot_y + plot_height + offset * 2:.2f}">'
+        f"Reynolds number R = (VD) / \u03BD  (V in m/s, D in m, \u03BD in m²/s)</text>",
+    )
+    # the symbol U+03BD is ν # noqa: RUF003
+    out.append("</g>\n")
+
+    # Critical zone Re2000..Re4000
+    x_critical_start = xpix(critical_zone_start)
+    x_critical_end = xpix(critical_zone_end)
+    out.append(
+        f'<rect ID="criticalZone" x="{x_critical_start:.2f}" '
+        f'y="{plot_y:.2f}" width="{x_critical_end - x_critical_start:.2f}" '
+        f'height="{plot_height:.2f}" fill="currentColor" '
+        f'fill-opacity="{grid_minor_opacity - 0.15}" stroke="none"/>\n',
+    )
+
+    # Draw reynolds complete turbulence starting line
+    # Reynolds complete turbulence value
+    # formula = 3500/r and 1/√f = 1.14 - 2 log r
+    roughness_min = relative_roughness_min
+    roughness_max = relative_roughness_max
+
+    # No more than 50 roughness values for the polyline
+    # for finer results 500, but there is no point in that
+    roughness_values: NDArrayFloat = cast(
+        "NDArrayFloat", np.logspace(np.log10(roughness_min),
+        np.log10(roughness_max), 30),
+    )
+    constant_value = 3500
+    points: list[tuple[float, float]] = []
+
+    for roughness in roughness_values:
+        reynolds_complete_turbulence_value = constant_value / roughness
+        if not (re_min <= reynolds_complete_turbulence_value <= re_max):
+            continue
+
+        inverse = 1.14 - 2 * log10(roughness)
+        friction_factor = 1 / (inverse**2)
+        if not (friction_factor_min <= friction_factor <= friction_factor_max):
+            continue
+
+        x = xpix(reynolds_complete_turbulence_value)
+        y = ypix(friction_factor)
+        points.append((x, y))
+
+    points_list = " ".join(f"{x:.2f},{y:.2f}" for x, y in points)
+    dash_value = "5 4"
+
+    out.append(
+        f'<polyline ID="completeTurbulence" points="{points_list}" fill="none" '
+        f'stroke="currentColor" stroke-width="{grid_minor_stroke}" '
+        f'stroke-dasharray="{dash_value}" />\n',
+    )
+
+    # Draw Reynolds zones annotations over
+    # an arbitrary friction factor line:
+    # Laminar Flow >(x1)< Critical Zone >(x2)< Transition...
+    # (x2)< Transition Zone >(x3)< Complete turbulence
+    friction_factor_annotations = 0.085  # looks good here
+    y_annotations = ypix(friction_factor_annotations)
+    x1 = xpix(critical_zone_start)  # and laminar flow ends
+    x2 = xpix(critical_zone_end)  # and transition zone starts
+    # Reynolds number R=3500/r - r is calculated using the preset
+    # friction factor in equation 1/√f = 1.14 - 2 log r
+    reynolds_transition_zone_end = 3500 / (
+        10 ** ((1.14 - 1 / math.sqrt(friction_factor_annotations)) / 2)
+    )
+    x3 = xpix(reynolds_transition_zone_end)  # and complete turbulence starts
+
+    out.append(
+        f'<g ID="reynoldsZoneAnnotations" '
+        f'font-size="{reynolds_major_grid_label}" '
+        f'font-family="{font_family}" font-weight="200" text-anchor="middle" '
+        f'fill="currentColor" stroke="currentColor" '
+        f'stroke-width="{grid_major_stroke}" marker-end="url(#arrow)">',
+    )
+    out.append(
+        f'    <line x1="{x1 - marker_height * 2:.2f}" '
+        f'y1="{y_annotations:.2f}" x2="{x1:.2f}" y2="{y_annotations:.2f}" />\n'
+        f'    <line x1="{x1 + marker_height * 2:.2f}" '
+        f'y1="{y_annotations:.2f}" x2="{x1:.2f}" y2="{y_annotations:.2f}" />\n'
+        f'    <line x1="{x2 - marker_height * 2:.2f}" '
+        f'y1="{y_annotations:.2f}" x2="{x2:.2f}" y2="{y_annotations:.2f}" />\n'
+        f'    <line x1="{x2 + marker_height * 2:.2f}" '
+        f'y1="{y_annotations:.2f}" x2="{x2:.2f}" y2="{y_annotations:.2f}" />\n'
+        f'    <line x1="{x3 - marker_height * 2:.2f}" '
+        f'y1="{y_annotations:.2f}" x2="{x3:.2f}" y2="{y_annotations:.2f}" />\n'
+        f'    <line x1="{x3 + marker_height * 2:.2f}" '
+        f'y1="{y_annotations:.2f}" x2="{x3:.2f}" y2="{y_annotations:.2f}" />\n'
+        f'    <text x="{plot_x + (x1 - plot_x) / 2:.2f}" '
+        f'y="{y_annotations - marker_height * 0.75:.2f}">Laminar</text>\n'
+        f'    <text x="{plot_x + (x1 - plot_x) / 2:.2f}" '
+        f'y="{y_annotations + marker_height * 1.5:.2f}">Flow</text>\n'
+        f'    <text x="{x1 + (x2 - x1) / 2:.2f}" '
+        f'y="{y_annotations - marker_height * 0.75:.2f}">Critical</text>\n'
+        f'    <text x="{x1 + (x2 - x1) / 2:.2f}" '
+        f'y="{y_annotations + marker_height * 1.5:.2f}">Zone</text>\n'
+        f'    <text x="{x2 + (x3 - x2) / 2:.2f}" '
+        f'y="{y_annotations:.2f}">Transition Zone</text>\n'
+        f'    <text x="{x3 + (plot_width - x3) / 2:.2f}" y="{y_annotations:.2f}">'
+        f"Complete turbulence, rough pipes, "
+        f"R &gt; 3500/r, 1/\u221af = 1.14 - 2 log r</text>",
+    )
+    out.append("</g>\n")
+    return "\n".join(out)
+
+def draw_friction_factor_grid() -> str:
+    """Draw the horizontal grid lines for the friction factor values."""
+    cfg = SVG_CONFIG
+    plot_x_start = cfg["left"]
+    plot_x_end = cfg["width"] - cfg["right"]
+    plot_y_start = cfg["top"]
+    plot_y_end = cfg["height"] - cfg["bottom"]
+    friction_grid_major_values = cfg["FRICTION_FACTOR_GRID_MAJOR_VALUES"]
+    friction_grid_minor_values = cfg["FRICTION_FACTOR_GRID_MINOR_VALUES"]
+
+    # lines
+    major_line_stroke = cfg["grid_major"]
+    minor_line_stroke = cfg["grid_minor"]
+    major_line_opacity = cfg["opacity_grid_major"]
+    minor_line_opacity = cfg["opacity_grid_minor"]
+    marker_height = cfg["arrow_marker_height"]
+
+    # text
+    major_font_size = cfg["axis_label"]
+    font_size_title = cfg["title"]
+    font_family = cfg["font_family"]
+
+    def _label_friction(v: float) -> str:
+        """Generate label for friction factor (10?¹, 10?², etc.).
+
+        Helper for draw_friction_factor_grid()
+        """
+        tolerance = 5e-5
+        friction_factor_min = cfg["FRICTION_FACTOR_MIN"]  # 0.008
+        friction_factor_max = cfg["FRICTION_FACTOR_MAX"]  # 0.1
+        if abs(v - 0.1) < tolerance:
+            return "10\u207b\u00b9"  # 10⁻¹
+        if abs(v - 0.01) < tolerance:
+            return "10\u207b\u00b2"  # 10⁻²
+        if friction_factor_min <= v < friction_factor_max:
+            # For 0.008, 0.009, 0.010: show as 8, 9, 10
+            return str(round(v * 1000))
+        # For other values, show as 1.2, 1.4, ...
+        mult = v / 0.01
+        tolerance = 1e-6
+        if abs(mult - round(mult)) < tolerance:
+            return str(round(mult))
+        return f"{mult:.1f}".rstrip("0").rstrip(".")
+
+    out: list[str] = []
+    out.append(
+        f"<!-- Friction factor grid lines and labels -->\n"
+        f'<g ID="frictionFactorMajorLinesGrid" '
+        f'stroke="currentColor" stroke-linecap="round" '
+        f'stroke_width="{major_line_stroke}" '
+        f'text-anchor="end" fill="currentColor" font-family="{font_family}" '
+        f'font-weight="100" font-size="{major_font_size}">',
+    )
+    for v in friction_grid_major_values:
+        y = ypix(v)
+        out.append(
+            f'    <line stroke-opacity="{major_line_opacity}" x1="{plot_x_start}" '
+            f'y1="{y:.2f}" x2="{plot_x_end}" y2="{y:.2f}"/>',
+        )
+        out.append(
+            f'    <text x="{plot_x_start - 10}" '
+            f'y="{y + 4:.2f}">{_label_friction(v)}</text>',
+        )
+    out.append("</g>\n")
+
+    out.append(
+        f'<g ID="frictionFactorMinorLinesGrid" '
+        f'stroke="currentColor" stroke-linecap="round" '
+        f'stroke_width="{minor_line_stroke}" stroke-opacity="{minor_line_opacity}">',
+    )
+    for v in friction_grid_minor_values:
+        y = ypix(v)
+        out.append(
+            f'    <line x1="{plot_x_start}" y1="{y:.2f}" '
+            f'x2="{plot_x_end}" y2="{y:.2f}"/>',
+        )
+
+    # Left axis title
+    out.append(
+        f'    <text x="{plot_x_start - marker_height * 5:.1f}" '
+        f'y="{plot_y_start + (plot_y_end - plot_y_start) / 2:.1f}" '
+        f'transform="rotate(-90 {plot_x_start - marker_height * 5:.1f},'
+        f'{plot_y_start + (plot_y_end - plot_y_start) / 2:.1f})" '
+        f'text-anchor="middle" fill="currentColor" font-family="{font_family}" '
+        f'font-weight="400" font-size="{font_size_title}">'
+        f"Darcy-Weisbach friction factor  f = 2 h D g/ (L V\u00b2)</text>",
+    )
+
+    out.append("</g>\n")
+    return "\n".join(out)
+
+def draw_vd_grid() -> str:
+    """Draw the vertical grid lines for the V·D values."""
+    cfg = SVG_CONFIG
+
+    vd_air_grid = cfg["VD_AIR_GRID"]
+    vd_water_grid = cfg["VD_WATER_GRID"]
+    nu_air = cfg["NU_AIR"]
+    nu_water = cfg["NU_WATER"]
+
+    plot_x_start = cfg["left"]
+    plot_y_start = cfg["top"]
+    plot_x_end = cfg["width"] - cfg["right"]
+
+    # lines
+    major_line_stroke = cfg["grid_major"]
+    marker_height = cfg["arrow_marker_height"]
+
+    # text
+    font_size_vd_values = cfg["small"]
+    font_size_vd_title = cfg["axis_label"]
+    font_family = cfg["font_family"]
+
+    out: list[str] = []
+    out.append(
+        f"<!-- VD grid lines and labels -->\n"
+        f'<g ID="vdGrid" '
+        f'stroke="currentColor" stroke-linecap="round" '
+        f'stroke_width="{major_line_stroke}" '
+        f'text-anchor="middle" fill="currentColor" font-family="{font_family}" '
+        f'font-weight="100" font-size="{font_size_vd_values}">',
+    )
+    for v in vd_air_grid:
+        reynolds = v * 0.01 / nu_air
+        x = xpix(reynolds)
+        out.append(
+            f'    <line x1="{x:.2f}" y1="{plot_y_start - marker_height * 0.5:.2f}" '
+            f'x2="{x:.2f}" y2="{plot_y_start - marker_height * 1.5:.2f}"/>',
+        )
+        out.append(
+            f'    <text x="{x:.2f}" '
+            f'y="{plot_y_start - marker_height * 2:.2f}">{v:g}</text>',
+        )
+
+    out.append(
+        f'    <line x1="{plot_x_start:.2f}" '
+        f'y1="{plot_y_start - marker_height * 6:.2f}" '
+        f'x2="{plot_x_end:.2f}" y2="{plot_y_start - marker_height * 6:.2f}"/>',
+    )
+
+    for v in vd_water_grid:
+        reynolds = v * 0.01 / nu_water
+        x = xpix(reynolds)
+        out.append(
+            f'    <line x1="{x:.2f}" y1="{plot_y_start - marker_height * 6:.2f}" '
+            f'x2="{x:.2f}" y2="{plot_y_start - marker_height * 7:.2f}"/>',
+        )
+        out.append(
+            f'    <text x="{x:.2f}" '
+            f'y="{plot_y_start - marker_height * 7.5:.2f}">{v:g}</text>',
+        )
+
+    out.append("</g>\n")
+
+    out.append(
+        f"<!-- VD grid lines and titles -->\n"
+        f'<g ID="vdTitle" '
+        f'stroke="currentColor" stroke-linecap="round" '
+        f'text-anchor="middle" fill="currentColor" font-family="{font_family}" '
+        f'font-weight="100" font-size="{font_size_vd_title}">',
+    )
+    out.append(
+        f'    <text x="{plot_x_start + (plot_x_end - plot_x_start) / 2:.2f}" '
+        f'y="{plot_y_start - marker_height * 3.5:.2f}">'
+        f'VD for atmospheric air at 20°C (V in m/s, D in cm)</text>',
+    )
+    out.append(
+        f'    <text x="{plot_x_start + (plot_x_end - plot_x_start) / 2:.2f}" '
+        f'y="{plot_y_start - marker_height * 9:.2f}">'
+        f'VD for water at 20°C (V in m/s, D in cm)</text>',
+    )
+    out.append("</g>\n")
+
+    return "\n".join(out)
+
+def draw_roughness_grid() -> str:
+    """Draw roughness scale on the right side."""
+    cfg = SVG_CONFIG
+    roughness_grid_values = cfg["ROUGHNESS_GRID_VALUES"]
+    friction_factor_min = cfg["FRICTION_FACTOR_MIN"]  # 0.008
+    friction_factor_max = cfg["FRICTION_FACTOR_MAX"]  # 0.1
+
+    plot_x_end = cfg["width"] - cfg["right"]
+    plot_y_start = cfg["top"]
+    plot_y_end = cfg["height"] - cfg["bottom"]
+    # lines / spacers
+    marker_height = cfg["arrow_marker_height"]
+
+    # text
+    font_size_roughness_values = cfg["axis_tick"]
+    font_size_title = cfg["title"]
+    font_family = cfg["font_family"]
+
+    tolerance = 0.001
+    out: list[str] = []
+    out.append(
+        f"<!-- Relative Roughness grid/lines values -->\n"
+        f'<g ID="roughnessGridValues" '
+        f'stroke="currentColor" stroke-linecap="round" '
+        f'text-anchor="start" fill="currentColor" font-family="{font_family}" '
+        f'font-weight="100" font-size="{font_size_roughness_values}">',
+    )
+    for roughness in roughness_grid_values:
+        inverse = 1.14 - 2 * log10(roughness)
+        friction_factor = 1 / (inverse**2)
+        if not (friction_factor_min <= friction_factor <= friction_factor_max):
+            continue
+        y = ypix(friction_factor)
+        label = (
+            f"{roughness:g}"
+            if roughness >= tolerance
+            else (f"{roughness:.0e}".replace("e-0", "e-").replace("e-", "e-"))
+        )
+        out.append(
+            f'    <line x1="{plot_x_end + marker_height * 0.5:.2f}" '
+            f'y1="{y:.2f}" x2="{plot_x_end + marker_height * 1.5:.2f}" y2="{y:.2f}"/>',
+        )
+        out.append(
+            f'    <text x="{plot_x_end + marker_height * 2:.2f}" '
+            f'y="{y + 4:.2f}">{label}</text>',
+        )
+
+    out.append("</g>\n")
+
+    # Right axis title
+    out.append(
+        f"<!-- Relative Roughness Title -->\n"
+        f'<g ID="roughnessTitle" '
+        f'text-anchor="middle" fill="currentColor" font-family="{font_family}" '
+        f'font-weight="400" font-size="{font_size_title}">\n'
+        f'    <text x="{plot_x_end + marker_height * 8:.1f}" '
+        f'y="{plot_y_start + (plot_y_end - plot_y_start) / 2:.1f}" '
+        f'transform="rotate(-90 {plot_x_end + marker_height * 8:.1f},'
+        f'{plot_y_start + (plot_y_end - plot_y_start) / 2:.1f})" >'
+        f'Relative roughness  r = \u03b5 / D  (\u03b5 in mm, D in mm)</text>'
+        f'</g>\n',
+    )
+    # simbol U+03B5 is ε
+    return "\n".join(out)
+
+def draw_smooth_pipe() -> str:
+    """Draw smooth pipe line (r = 0) and hagen-poiseuille line (r <= 2300).
+
+    Smooth pipe equation 1/√f = 2*log10(R*√f) - 0.8 where 2300 < R < 1e8
+    We use Blasius equation f = 0.3164/Re^0.25 as a start for iterative method
+    """
+    cfg = SVG_CONFIG
+    re_start = 2300
+    re_max = cfg["RE_MAX"]  # 100,000,000 - maximum Reynolds number
+    friction_factor_min = cfg["FRICTION_FACTOR_MIN"]  # 0.008
+    friction_factor_max = cfg["FRICTION_FACTOR_MAX"]  # 0.1
+
+    # lines
+    grid_major_stroke = cfg["grid_major"]
+
+    out: list[str] = []
+    points: list[tuple[float, float]] = []
+
+    def _solve_smooth_pipe_f(re: float, tol: float = 1e-4, max_iter: int = 10) -> float:
+        f: float = 0.3164 * re**-0.25
+        for _ in range(max_iter):
+            inv = 2.0 * np.log10(re * np.sqrt(f)) - 0.8
+            f_new = 1.0 / (inv**2)
+            if abs(f_new - f) < tol:
+                return f_new
+            f = f_new
+        return f
+
+    reynolds_values: NDArrayFloat = cast(
+        "NDArrayFloat", np.logspace(np.log10(re_start), np.log10(re_max), 40),
+    )
+    for reynolds in reynolds_values:
+        friction_factor = _solve_smooth_pipe_f(reynolds)
+        if not (friction_factor_min <= friction_factor <= friction_factor_max):
+            continue
+        x = xpix(reynolds)
+        y = ypix(friction_factor)
+        points.append((x, y))
+
+    points_list = " ".join(f"{x:.2f},{y:.2f}" for x, y in points)
+    out.append("<!-- Smooth Pipe Line -->")
+    out.append('<g ID="smoothPipeLine">')
+    out.append(
+        f'    <polyline ID="smoothPipe" points="{points_list}" fill="none" '
+        f'stroke="currentColor" stroke-width="{grid_major_stroke}"/>',
+    )
+    out.append("</g>\n")
+
+    # Hagen-Poiseuille line (laminar, R <= 2300, f = 64/R)
+    hagen_points: list[tuple[float, float]] = []
+    reynolds_laminar_values = np.linspace(600, 2300, 20)
+    for reynolds in reynolds_laminar_values:
+        friction_factor = 64.0 / reynolds
+        if not (friction_factor_min <= friction_factor <= friction_factor_max):
+            continue
+        x = xpix(reynolds)
+        y = ypix(friction_factor)
+        hagen_points.append((x, y))
+
+    hagen_points_list = " ".join(f"{x:.2f},{y:.2f}" for x, y in hagen_points)
+    out.append("<!-- Hagen-Poiseuille Line -->")
+    out.append('<g ID="hagenPoiseuilleLine">')
+    out.append(
+        f'    <polyline ID="hagenPoiseuille" points="{hagen_points_list}" fill="none" '
+        f'stroke="currentColor" stroke-width="{grid_major_stroke}"/>',
+    )
+    out.append("</g>\n")
+    return "\n".join(out)
+
+def draw_equations_block() -> str:
+    """Equation and info text block.
+
+    Smooth pipes, Hagen - Poisseuille, Colebrook and continuity equation.
+    Common material, fluid and latitude values.
+    """
+    cfg = SVG_CONFIG
+    material = cfg["INFO_MATERIAL"]
+    fluid = cfg["INFO_FLUID"]
+    latitude = cfg["INFO_LATITUDE"]
+    equation_text = cfg["INFO_EQUATION"]
+    plot_width = cfg["width"] - cfg["left"] - cfg["right"]
+    bottom_line_x = cfg["left"]
+    bottom_line_y = cfg["height"] - cfg["bottom"]
+
+    # text
+    equation_text_size = cfg["small"]
+    font_family = cfg["font_family"]
+
+    marker_height = cfg["arrow_marker_height"]
+
+    out: list[str] = []
+
+    out.append("<!-- Equations Text Block -->")
+    out.append(
+        f'<g ID="equationsTextBlock" '
+        f'font-size="{equation_text_size}" font-family="{font_family}" '
+        f'font-weight="200" text-anchor="start" '
+        f'fill="currentColor" stroke="currentColor">',
+    )
+    x = plot_width / 2 + bottom_line_x - 22 * marker_height
+    y = bottom_line_y - 22 * marker_height
+    for text in equation_text:
+        out.append(f'    <text x="{x}" y="{y}">{text}</text>')
+        y += 2 * marker_height  # if text != " " else marker_height
+    out.append("</g>\n")
+
+    out.append("<!-- Information Text Block -->")
+    out.append(
+        f'<g ID="informationTextBlock" '
+        f'font-size="{equation_text_size}" font-family="{font_family}" '
+        f'font-weight="200" text-anchor="start" '
+        f'fill="currentColor" stroke="currentColor">',
+    )
+
+    info_dicts = [material, fluid, latitude]
+    x_key = bottom_line_x + 3 * marker_height
+    y = bottom_line_y - 36 * marker_height
+    x_val = x_key + 15 * marker_height
+
+    for info in info_dicts:
+        items = list(info.items())
+        for key, value in items:
+            out.append(f'    <text x="{x_key}" y="{y}">{key}</text>')
+            out.append(f'    <text x="{x_val}" y="{y}">{value}</text>')
+            y += 2 * marker_height
+        y += 2 * marker_height
+
+    out.append("</g>\n")
+    return "\n".join(out)
+
+def draw_curves() -> str:
+    """Draw additional curves for the Moody diagram.
+
+    Returns:
+        SVG string containing additional curves
+
+    """
+    cfg = SVG_CONFIG
+    re_start = 2300
+    re_max = cfg["RE_MAX"]  # 100,000,000 - maximum Reynolds number
+    friction_factor_min = cfg["FRICTION_FACTOR_MIN"]  # 0.008
+    friction_factor_max = cfg["FRICTION_FACTOR_MAX"]  # 0.1
+    roughness_grid_values = cfg["ROUGHNESS_GRID_VALUES"]
+
+    # lines
+    grid_major_stroke = cfg["grid_major"]
+    out: list[str] = []
+    out.append("<!-- Colebrook Curves -->")
+    out.append(
+            f'<g ID="colebrookCurves" fill="none" '
+            f'stroke="currentColor" stroke-width="{grid_major_stroke}">',
+            )
+
+    def _solve_colebrook_f(
+            re: float, roughness: float, tol: float = 1e-4, max_iter: int = 20,
+            ) -> float:
+        """Solve Colebrook equation: 1/√f = -2 log(r/3.7 + 2.51/(R √f))."""
+        # Initial guess using Blasius equation
+        f: float = 0.3164 * re**-0.25
+        for _ in range(max_iter):
+            sqrt_f = np.sqrt(f)
+            inv_sqrt_f = -2.0 * np.log10(roughness / 3.7 + 2.51 / (re * sqrt_f))
+            f_new = 1.0 / (inv_sqrt_f**2)
+            if abs(f_new - f) < tol:
+                return f_new
+            f = f_new
+        return f
+
+    # Generate curves for each roughness value
+    for roughness in roughness_grid_values:
+        points: list[tuple[float, float]] = []
+
+        reynolds_values: NDArrayFloat = cast(
+            "NDArrayFloat", np.logspace(np.log10(re_start), np.log10(re_max), 20),
+        )
+
+        for reynolds in reynolds_values:
+            friction_factor = _solve_colebrook_f(reynolds, roughness)
+            if not (friction_factor_min <= friction_factor <= friction_factor_max):
+                continue
+            x = xpix(reynolds)
+            y = ypix(friction_factor)
+            points.append((x, y))
+
+        if points:  # Only draw if we have valid points
+            points_list = " ".join(f"{x:.2f},{y:.2f}" for x, y in points)
+            out.append(f'    <polyline points="{points_list}"/>')
+
+    out.append("</g>\n")
+    return "\n".join(out)
+
+
+# ----------------------------------------------------------------------------
+# svg builder
+# ----------------------------------------------------------------------------
+
+def build_svg() -> str:
+    """Build background layer of the Moody diagram.
+
+    Returns:
+        SVG string containing header, definitions, frame, grids, and critical zone
+
+    """
+    return f"""
+{svg_header()}
+{svg_defs()}
+{draw_frame()}
+{draw_reynolds_elements()}
+{draw_friction_factor_grid()}
+{draw_vd_grid()}
+{draw_roughness_grid()}
+{draw_smooth_pipe()}
+{draw_equations_block()}
+{draw_curves()}
+{svg_footer()}
+"""
+
+def main() -> None:
+    """Generate Moody diagram SVG and save to file.
+
+    Returns:
+        None
+
+    """
+    logger.info("Generating Moody diagram SVG...")
+    svg_content = build_svg()
+    cfg = SVG_CONFIG
+    # Save to file
+    filename: str
+    filename = "moody_diagram_" + str(cfg["width"]) + "x" + str(cfg["height"]) + ".svg"
+    output_path = f"./output/{filename}"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(output_path).write_text(svg_content, encoding="utf-8")
+
+    logger.info("Moody diagram saved to: %s", output_path)
+    logger.info("Done!")
+
+if __name__ == "__main__":
+    main()

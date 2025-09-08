@@ -1,0 +1,88 @@
+# Configurație completă și strictă pentru Ruff
+[lint]
+select = ["ALL"]    # Activează toate regulile disponibile
+ignore = [
+    "D203",  # Incompatibil cu D211 (no-blank-line-before-class)
+    "D213",  # Incompatibil cu D212 (multi-line-summary-first-line)
+]
+
+# Poți exclude anumite directoare sau fișiere de la linting
+exclude = [".venv", "__pycache__", "build", "dist", "*.bak"]
+
+# Activează autofix pentru toate regulile posibile
+fixable = ["ALL"]
+
+# Dezactivează autofix pentru anumite reguli (dacă vrei)
+# unfixable = ["F401"]
+
+# Setări pentru isort (sortarea importurilor)
+[lint.isort]
+known-first-party = ["src"]
+combine-as-imports = true
+force-single-line = false
+
+# Setări pentru mccabe (complexitate ciclomatică)
+[lint.mccabe]
+max-complexity = 10
+
+# Setări pentru flake8-quotes (stilul ghilimelelor)
+[lint.flake8-quotes]
+inline-quotes = "double"
+multiline-quotes = "double"
+avoid-escape = true
+
+# Setări pentru pycodestyle
+[lint.pycodestyle]
+max-doc-length = 88
+max-line-length = 88
+
+# `allowed-confusables`, 
+# `dummy-variable-rgx`, 
+# `extend-ignore`, 
+# `extend-select`, 
+# `extend-fixable`, 
+# `extend-unfixable`, 
+# `external`, 
+# `fixable`, 
+# `ignore`, 
+# `extend-safe-fixes`, 
+# `extend-unsafe-fixes`, 
+# `ignore-init-module-imports`, 
+# `logger-objects`, 
+# `select`, 
+# `explicit-preview-rules`, 
+# `task-tags`, 
+# `typing-modules`, 
+# `unfixable`, 
+# `flake8-annotations`, 
+# `flake8-bandit`, 
+# `flake8-boolean-trap`, 
+# `flake8-bugbear`, 
+# `flake8-builtins`, 
+# `flake8-comprehensions`, 
+# `flake8-copyright`, 
+# `flake8-errmsg`, 
+# `flake8-quotes`, 
+# `flake8-self`, 
+# `flake8-tidy-imports`, 
+# `flake8-type-checking`, 
+# `flake8-gettext`, 
+# `flake8-implicit-str-concat`, 
+# `flake8-import-conventions`, 
+# `flake8-pytest-style`, 
+# `flake8-unused-arguments`, 
+# `isort`, 
+# `mccabe`, 
+# `pep8-naming`, 
+# `pycodestyle`, 
+# `pydocstyle`, 
+# `pyflakes`, 
+# `pylint`, 
+# `pyupgrade`, 
+# `per-file-ignores`, 
+# `extend-per-file-ignores`, 
+# `exclude`, 
+# `pydoclint`, 
+# `ruff`, 
+# `preview`, 
+# `typing-extensions
